@@ -1,0 +1,215 @@
+---
+title: "ML_HW3"
+date: "2022-10-25"
+output: 
+  html_document:
+   toc: true
+   toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message = F, warning = F}
+library(tidyverse)
+library(tidymodels)
+library(discrim)
+library(corrplot)
+library(klaR)
+
+set.seed(0)
+
+titanic <- read.csv("titanic.csv")
+
+titanic$survived <- as.factor(titanic$survived) 
+titanic$pclass <- as.factor(titanic$pclass)
+
+```
+
+
+# Coding questions
+
+## Question 1 
+
+```{r, message = F, warning = F}
+titanic_split <- initial_split(titanic, prop = 0.80, strata = survived)
+titanic_train <- training(titanic_split)
+titanic_test  <- testing(titanic_split)
+
+#Checking if the training and test sets have the appropriate number of observations.
+nrow(titanic_train) #712 = this is 80% of 891
+nrow(titanic_test) #179 = this is 20% of 891
+
+round((colMeans(is.na(titanic_train)))*100, 2)
+```
+
+We can see here that the variable cabin has a very high number of missing values (77%). The variable age (19.24%) and embarked (28%) also have some missign values.
+
+It's important to stratify by survived because it balances the number of people who did and did not survived when we split the data.
+
+
+## Question 2 
+
+```{r, message = F, warning = F}
+titanic_train %>% 
+  ggplot(aes(x = survived)) +
+  geom_bar(fill = "blue")+
+  theme_bw()
+```
+
+The distribution of the outcome variable "survived" in the training set shows that there are slightly more people who did not survive. 
+
+
+## Question 3
+
+```{r, message = F, warning = F, results='asis'}
+titanic_train <- drop_na(titanic_train) 
+
+corrplot(cor(titanic_train %>% dplyr:: select(passenger_id, sib_sp, parch, fare,age)) ,method = 'circle', type = 'lower', insig='blank', addCoef.col ='black', number.cex = 0.8, order = 'AOE', diag=FALSE)
+
+```
+
+We can see that parch (number of parents or children) and age are negatively correlated to each other. 
+There is also a strong positive relationship between parch and fare and between parch and sib_sp (number of siblings or spouse aboard the titanic).
+The other variables seem to be very weakly correlated.
+
+## Question 4
+
+```{r, message = F, warning = F}
+titanic_recipe <- recipe(survived ~ pclass + sex + age + sib_sp + parch + fare, data = titanic_train) %>%
+  step_impute_linear(age, impute_with = imp_vars(pclass,sex)) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_interact(terms = ~ starts_with("sex"):fare) %>%
+  step_interact(terms = ~ age:fare)
+```
+
+
+## Question 5
+
+```{r, message = F, warning = F}
+logit_model <- logistic_reg() %>% set_engine("glm") %>% set_mode("classification")
+
+logit_workflow <- workflow() %>%  add_model(logit_model) %>%  add_recipe(titanic_recipe)
+
+logit_fit <- fit(logit_workflow, titanic_train)
+
+#logit_fit %>% tidy()
+```
+
+
+## Question 6
+
+```{r, message = F, warning = F}
+lda_model <- discrim_linear()  %>% set_mode("classification") %>% set_engine("MASS")
+
+lda_workflow <- workflow() %>%  add_model(lda_model) %>%  add_recipe(titanic_recipe)
+
+lda_fit <- fit(lda_workflow, titanic_train)
+
+```
+
+
+## Question 7
+
+```{r, message = F, warning = F}
+qda_model <- discrim_quad()  %>% set_mode("classification") %>% set_engine("MASS")
+
+qda_workflow <- workflow() %>%  add_model(qda_model) %>%  add_recipe(titanic_recipe)
+
+qda_fit <- fit(qda_workflow, titanic_train)
+
+```
+
+
+## Question 8
+
+```{r, message = F, warning = F}
+nb_model <- naive_Bayes() %>% set_mode("classification") %>% set_engine("klaR") %>% set_args(usekernel = FALSE)
+
+nb_workflow <- workflow() %>% add_model(nb_model) %>% add_recipe(titanic_recipe)
+
+nb_fit <- fit(nb_workflow, titanic_train)
+```
+
+
+## Question 9
+
+```{r, message = F, warning = F}
+#Prediction
+logit_pred <-predict(logit_fit, new_data = titanic_train, , type = "prob")
+lda_pred <-predict(lda_fit, new_data = titanic_train, , type = "prob")
+qda_pred <-predict(qda_fit, new_data = titanic_train, , type = "prob")
+nb_pred <-predict(nb_fit, new_data = titanic_train, , type = "prob")
+
+#Accuracy
+logit_acc <- augment(logit_fit, new_data = titanic_train) %>% accuracy(truth = survived, estimate = .pred_class)
+lda_acc <- augment(lda_fit, new_data = titanic_train) %>% accuracy(truth = survived, estimate = .pred_class)
+qda_acc <- augment(qda_fit, new_data = titanic_train) %>% accuracy(truth = survived, estimate = .pred_class)
+nb_acc <- augment(nb_fit, new_data = titanic_train) %>% accuracy(truth = survived, estimate = .pred_class)
+
+accuracies <- c(logit_acc$.estimate, lda_acc$.estimate, qda_acc$.estimate , nb_acc$.estimate)
+models <- c("Logistic Regression", "LDA", "QDA", "Naive Bayes")
+results <- tibble(accuracies = accuracies, models = models) %>% arrange(-accuracies)
+results
+```
+
+We can see that QDA achieves the highest the highest accuracy on the training data. 
+
+
+## Question 10
+
+```{r, message = F, warning = F}
+#Because QDA has the highest accuracy from the training set, I am going to fit QDA with the test set
+qda_pred_test <- predict(qda_fit, new_data = titanic_test, type = "prob")
+qda_acc_test  <- augment(qda_fit, new_data = titanic_test) %>% accuracy(truth = survived, estimate = .pred_class)
+qda_acc_test
+
+#creating and visualizing the confusion matrix
+augment(qda_fit, new_data = titanic_test) %>% conf_mat(truth = survived, estimate = .pred_class) %>% autoplot(type = "heatmap")
+
+#ROC curve
+augment(qda_fit, new_data = titanic_test) %>%
+  roc_curve(survived, .pred_No) %>%
+  autoplot()
+#Area under the ROC curve
+augment(qda_fit, new_data = titanic_test) %>%
+  roc_auc(survived, .pred_No) 
+```
+
+
+The test accuracy of the model is lower than the training accuracy of the model. This is not surprising because the model was trained with the training data. The area under the ROC curve is 0.76.
+
+# 231 students only:
+
+## Question 11
+$p = \frac{e^z}{1+e^z}$. Multiplying both sides by $(\frac{1}{1-p})$ and taking the log, we get:
+$ln(\frac{p}{1-p}) = ln[\frac{e^z}{(1-p)(1+e^z)}]$. Plugging the value of p, we get:
+
+$$ln(\frac{p}{1-p}) = ln[\frac{e^z}{(1-(\frac{e^z}{1+e^z}))(1+e^z)}] $$
+Then by simplifying, we have:
+$$ln(\frac{p}{1-p}) = z$$. 
+
+
+## Question 12
+
+Odds are equal to $\frac{p}{1-p} = exp\{\beta_0 + \beta_1x_1\}$. So the derivative in terms of $x_1$ is.
+$$change\{odds\} = \beta_1exp\{\beta_0 + \beta_1x_1\}$$
+Therefore, if $x_1$ increases by 2, the odds increases by $\beta_1exp\{\beta_0 + \beta_1(2)\}$.
+
+
+The formula for p is: 
+$$p = \frac{exp\{\beta_0 + \beta_1x_1)\}}{1+exp\{\beta_0 + \beta_1x_1\}} = \frac{1}{\frac{1}{exp\{(\beta_0 + \beta_1x_1)\}} + 1}$$
+
+
+Thus, because $\beta$ is negative:
+as $x_1$ approaches $\infty$, p approaches 0, and as $x_1$ approaches $-\infty$, p approaches 1. 
+
+
+
+
+
+
+
+
