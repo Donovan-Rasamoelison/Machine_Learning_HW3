@@ -19,7 +19,7 @@ library(discrim)
 library(corrplot)
 library(klaR)
 
-set.seed(0)
+set.seed(17)
 
 titanic <- read.csv("titanic.csv")
 
@@ -65,9 +65,9 @@ The distribution of the outcome variable "survived" in the training set shows th
 ## Question 3
 
 ```{r, message = F, warning = F, results='asis'}
-titanic_train <- drop_na(titanic_train) 
+#titanic_train <- drop_na(titanic_train) 
 
-corrplot(cor(titanic_train %>% dplyr:: select(passenger_id, sib_sp, parch, fare,age)) ,method = 'circle', type = 'lower', insig='blank', addCoef.col ='black', number.cex = 0.8, order = 'AOE', diag=FALSE)
+corrplot(cor(drop_na(titanic_train) %>% dplyr:: select(passenger_id, sib_sp, parch, fare,age)) ,method = 'circle', type = 'lower', insig='blank', addCoef.col ='black', number.cex = 0.8, order = 'AOE', diag=FALSE)
 
 ```
 
@@ -155,31 +155,31 @@ results <- tibble(accuracies = accuracies, models = models) %>% arrange(-accurac
 results
 ```
 
-We can see that QDA achieves the highest the highest accuracy on the training data. 
+We can see that logit achieves the highest the highest accuracy on the training data. 
 
 
 ## Question 10
 
 ```{r, message = F, warning = F}
-#Because QDA has the highest accuracy from the training set, I am going to fit QDA with the test set
-qda_pred_test <- predict(qda_fit, new_data = titanic_test, type = "prob")
-qda_acc_test  <- augment(qda_fit, new_data = titanic_test) %>% accuracy(truth = survived, estimate = .pred_class)
-qda_acc_test
+#Because logit has the highest accuracy from the training set, I am going to fit logit with the test set
+logit_pred_test <- predict(logit_fit, new_data = titanic_test, type = "prob")
+logit_acc_test  <- augment(logit_fit, new_data = titanic_test) %>% accuracy(truth = survived, estimate = .pred_class)
+logit_acc_test
 
 #creating and visualizing the confusion matrix
-augment(qda_fit, new_data = titanic_test) %>% conf_mat(truth = survived, estimate = .pred_class) %>% autoplot(type = "heatmap")
+augment(logit_fit, new_data = titanic_test) %>% conf_mat(truth = survived, estimate = .pred_class) %>% autoplot(type = "heatmap")
 
 #ROC curve
-augment(qda_fit, new_data = titanic_test) %>%
+augment(logit_fit, new_data = titanic_test) %>%
   roc_curve(survived, .pred_No) %>%
   autoplot()
 #Area under the ROC curve
-augment(qda_fit, new_data = titanic_test) %>%
+augment(logit_fit, new_data = titanic_test) %>%
   roc_auc(survived, .pred_No) 
 ```
 
 
-The test accuracy of the model is lower than the training accuracy of the model. This is not surprising because the model was trained with the training data. The area under the ROC curve is 0.76.
+The test accuracy of the model is lower than the training accuracy of the model. This is not surprising because the model was trained with the training data. The area under the ROC curve is .84.
 
 # 231 students only:
 
